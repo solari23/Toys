@@ -11,7 +11,10 @@ namespace CredentialManager
             using (CredentialManager credMan = new CredentialManager("foo.db"))
             {
                 credMan.LoadCredentialsDatabase();
+
+                Console.Write("Enter the password for 'jack': ");
                 credMan.AccrueCredentialFromConsole("jack");
+                Console.WriteLine();
 
                 Console.WriteLine(credMan.GenerateTokenForCredential("jack", ss => SecureStringToString(ss)));
                 credMan.SaveCredentialsToDatabase();

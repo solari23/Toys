@@ -11,7 +11,7 @@ namespace CredentialManager
 {
     /// <summary>
     /// Provides an interface for accruing, storing and handling credentials required at runtime. This class
-    /// utilizes Windows DPAPI to persist credentials on disk such that they are only accessible by in the
+    /// utilizes Windows DPAPI to persist credentials on disk such that they are only accessible in the
     /// context of the user who was logged in when the credentials were persisted.
     /// </summary>
     public sealed class CredentialManager : IDisposable
@@ -100,9 +100,9 @@ namespace CredentialManager
         /// <summary>
         /// Creates a token for the requested credential using the given token generator function.
         /// </summary>
-        /// <param name="credentialName">The name of the credential to generate a token for.</param>
+        /// <param name="credentialName">The name of the credential to use.</param>
         /// <param name="tokenGeneratorFunction">A function that takes the raw credential and outputs a token as a string.</param>
-        /// <returns></returns>
+        /// <returns>The token generated using the credential.</returns>
         public string GenerateTokenForCredential(string credentialName, Func<SecureString, string> tokenGeneratorFunction)
         {
             if (string.IsNullOrWhiteSpace(credentialName))
