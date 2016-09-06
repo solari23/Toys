@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Cryptography;
@@ -30,6 +31,22 @@ namespace CredentialManager
         /// The underlying credentials database. This is a map of credential name -> credential.
         /// </summary>
         private Dictionary<string, SecureString> Credentials { get; set; } = new Dictionary<string, SecureString>();
+
+        /// <summary>
+        /// Converts a SecureString to a regular String.
+        /// 
+        /// This is technically breaking the security of the SecureString. Unfortunately, a plaintext password is
+        /// strictly required in some applications that use basic auth.
+        /// </summary>
+        /// <param name="ss">The SecureString to convert.</param>
+        /// <returns>A regular string with the content of the SecureString exposed.</returns>
+        static string SecureStringToString(SecureString ss)
+        {
+            IntPtr bstrCredential = Marshal.SecureStringToBSTR(ss);
+            string plaintextCredential = Marshal.PtrToStringBSTR(bstrCredential);
+            Marshal.ZeroFreeBSTR(bstrCredential);
+            return plaintextCredential;
+        }
 
         /// <summary>
         /// Constructor for the CredentialManager class.
@@ -124,6 +141,26 @@ namespace CredentialManager
         }
 
         /// <summary>
+        /// Gets the requested credential as a NetworkCredential.
+        /// </summary>
+        /// <param name="credentialName">The credential to retrieve.</param>
+        /// <returns>A NetworkCredential object containing the credentials requested.</returns>
+        public NetworkCredential GetNetworkCredentialForCredential(string credentialName)
+        {
+            if (string.IsNullOrWhiteSpace(credentialName))
+            {
+                throw new ArgumentException("Credential name can't be null or empty!", nameof(credentialName));
+            }
+
+            if (!IsCredentialAvailable(credentialName))
+            {
+                throw new Exception(string.Format("No credential '{0}' exists.", credentialName));
+            }
+
+            return new NetworkCredential(credentialName, Credentials[credentialName]);
+        }
+
+        /// <summary>
         /// Checks whether or not a credential with the given name is available.
         /// </summary>
         /// <param name="credentialName">The name of the credential to check for.</param>
@@ -149,13 +186,14 @@ namespace CredentialManager
                 {
                     string credentialName;
                     SecureString credential;
+
                     while (TryReadCredential(fs, out credentialName, out credential))
                     {
                         Credentials[credentialName] = credential;
                     }
                 }
             }
-            catch (FileNotFoundException e)
+            catch (FileNotFoundException)
             {
                 // The credential database doesn't exist. Ignore the error.
             }
@@ -175,7 +213,6 @@ namespace CredentialManager
                     // We need some secondary entropy for DPAPI.
                     //
                     byte[] secondaryEntropy = Guid.NewGuid().ToByteArray();
-
                     byte[] plaintextCredentialBlob = null;
 
                     try
@@ -218,7 +255,6 @@ namespace CredentialManager
                         byte[] encryptedBlobSizeBytes = BitConverter.GetBytes(encryptedBlobSize);
                         Debug.Assert(encryptedBlobSizeBytes.Length == sizeof(int));
                         fs.Write(encryptedBlobSizeBytes, 0, sizeof(int));
-
                         fs.Write(encryptedCredentialBlob, 0, encryptedCredentialBlob.Length);
 
                         // We don't need the encyrpted bytes anymore.. just for funzies, get rid of them.
@@ -271,10 +307,11 @@ namespace CredentialManager
         private static SecureString ReadSecureStringFromBytes(byte[] bytes, int offset, int count)
         {
             SecureString secureString = new SecureString();
-            
+
             if (bytes != null && (offset + count <= bytes.Length))
             {
                 int upperBound = offset + count;
+
                 for (int i = offset; i < upperBound; i++)
                 {
                     secureString.AppendChar((char)bytes[i]);
@@ -359,6 +396,7 @@ namespace CredentialManager
             // Let DPAPI decrypt the blob.
             //
             byte[] plaintextCredentialBlob = null;
+
             try
             {
                 plaintextCredentialBlob = ProtectedData.Unprotect(encryptedCredentialBlob, secondaryEntropy, DataProtectionScope.CurrentUser);
@@ -370,7 +408,6 @@ namespace CredentialManager
                 // A zero byte separates the credential name and the credential itself.
                 //
                 int indexFirstZero = GetIndexOfFirstZeroByte(plaintextCredentialBlob);
-
                 if (indexFirstZero != -1)
                 {
                     credentialName = Encoding.Default.GetString(plaintextCredentialBlob, 0, indexFirstZero);
